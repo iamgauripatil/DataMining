@@ -9,7 +9,7 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 Load library
-```{r}
+```{r, warning=FALSE}
 library(rpart)
 library(rpart.plot)
 library(mlbench)
@@ -21,6 +21,7 @@ library(nnet)
 library(klaR)
 library(randomForest)
 library(varhandle)
+library(ROCR)
 ```
 
 Load Data
@@ -49,8 +50,6 @@ Recursive Partitioning and Regression Tree
 ```{r}
 # create model using recursive partitioning on the training data set
 x.rp <- rpart(Class ~ ., data=training, method = "class")
-
-summary(x.rp)
 
 # predict classes for the evaluation data set
 x.rp.pred <- predict(x.rp, type="class", newdata=testing)
@@ -99,17 +98,24 @@ x.nb <- NaiveBayes(Class ~ ., data=training)
 # predict classes for the evaluation data set
 x.nb.pred <- predict(x.nb, newdata=testing)
 
+# score the evaluation data set (extract the probabilities)
+x.nb.prob <- predict(x.nb, type="prob", newdata=testing)
+
 #confusion matrix
 confusionMatrix(x.nb.pred$class,testing$Class)
 
 ```
+
 Support Vector Machine Classifier
 ```{r}
 # create model using svm
-x.svm <- svm(Class ~ ., data=training)
+x.svm <- svm(Class ~ ., data=training,cost=4, gamma=0.0625, probability = TRUE)
 
 # predict classes for the evaluation data set
 x.svm.pred <- predict(x.svm, newdata=testing)
+
+#probabilities
+x.svm.prob <- predict(x.svm, type="prob", newdata=testing, probability = TRUE)
 
 #confusion matrix
 confusionMatrix(x.svm.pred,testing$Class)
@@ -124,22 +130,30 @@ x.nnet.pred <- predict(x.nnet,testing,type="class")
 #confusion matrix
 confusionMatrix(as.factor(x.nnet.pred),testing$Class)
 ```
+
+
 Cross Validation R tree
 ```{r}
 # Leave-1-Out Cross Validation (LOOCV)
 x.cv.pred <- numeric(length(testing[,10]))
+x.cv.prob <- numeric(length(testing[,10]))
+
 for (i in 1:length(training[,10])) {
   x1.tree <- rpart(Class ~ ., training[-i,])
 }
 
 for (i in 1:length(testing[,10])) {
   x1.pred <- predict(x1.tree,testing[i,],type="class")
+  # score the evaluation data set (extract the probabilities)
+ x1.prob <- predict(x1.tree,testing[i,],type="class")
   x.cv.pred[i] <- x1.pred
+  x.cv.prob[i] <- x1.prob
 }
 
-
 x.cv.pred <- factor(x.cv.pred,labels=levels(testing$Class))
+#Confusion matrix
 confusionMatrix(x.cv.pred,testing$Class)
+
 ```
 QDA 
 ```{r}
@@ -201,5 +215,51 @@ predall$majority<-ifelse(predall$sum>=6, "malignant", "benign")
 #Confusion matrix 
 confusionMatrix(as.factor(predall$majority), testing$Class)
 ```
+ROC curve
+```{r}
 
+# create an ROCR prediction object from rpart() probabilities
+x.rp.prob.rocr <- prediction(x.rp.prob[,2], testing$Class)
+# prepare an ROCR performance object for ROC curve (tpr=true positive rate, fpr=false positive rate)
+x.rp.perf <- performance(x.rp.prob.rocr, "tpr","fpr")
+# plot it
+plot(x.rp.perf, col=2, main="ROC curves comparing classification performance of five machine learning models")
+
+
+# Draw a legend.
+legend(0.6, 0.6, c('rpart', 'ctree', 'cforest','naive','svm','LOOCV'), 2:6)
+
+# ctree
+x.ct.prob.rocr <- prediction(x.ct.prob, testing$Class)
+x.ct.perf <- performance(x.ct.prob.rocr, "tpr","fpr")
+# add=TRUE draws on the existing chart 
+plot(x.ct.perf, col=3, add=TRUE)
+
+# cforest
+x.cf.prob.rocr <- prediction(x.cf.prob, testing$Class)
+x.cf.perf <- performance(x.cf.prob.rocr, "tpr","fpr")
+plot(x.cf.perf, col=4, add=TRUE)
+
+#naive bayes
+# create an ROCR prediction object from nb probabilities
+x.nb.prob.rocr <- prediction(x.nb.prob$posterior[,2], testing$Class)
+x.nb.perf <- performance(x.nb.prob.rocr, "tpr","fpr")
+plot(x.nb.perf, col=5, add=TRUE)
+
+# svm
+x.svm.prob.rocr <- prediction(attr(x.svm.prob, "probabilities")[,2], testing$Class)
+x.svm.perf <- performance(x.svm.prob.rocr, "tpr","fpr")
+plot(x.svm.perf, col=6, add=TRUE)
+
+# cross validation
+x.cv.prob.rocr <- prediction(x.cv.prob, testing$Class)
+x.cv.perf <- performance(x.cv.prob.rocr, "tpr","fpr")
+plot(x.cv.perf, col=7, add=TRUE)
+
+
+
+
+
+
+```
 

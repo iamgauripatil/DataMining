@@ -1,0 +1,205 @@
+---
+title: "ProjectTwo"
+author: "Gauri Patil"
+date: "3/15/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Load library
+```{r}
+library(rpart)
+library(rpart.plot)
+library(mlbench)
+library(party)
+library(caret)
+library(klaR)
+library(e1071)
+library(nnet)
+library(klaR)
+library(randomForest)
+library(varhandle)
+```
+
+Load Data
+```{r}
+data("BreastCancer")
+summary(BreastCancer)
+```
+Clean Data
+```{r}
+#remove rows with missing values
+BreastCancer <- na.omit(BreastCancer) 
+# remove the unique identifier
+BreastCancer$Id <- NULL 
+```
+
+Partition Data
+```{r}
+#Create partition
+index <- sample(2, nrow(BreastCancer), replace = TRUE, prob=c(0.8, 0.2))
+training <- BreastCancer[index == 1,]
+testing <- BreastCancer[index == 2,]
+
+```
+
+Recursive Partitioning and Regression Tree
+```{r}
+# create model using recursive partitioning on the training data set
+x.rp <- rpart(Class ~ ., data=training, method = "class")
+
+summary(x.rp)
+
+# predict classes for the evaluation data set
+x.rp.pred <- predict(x.rp, type="class", newdata=testing)
+
+# score the evaluation data set (extract the probabilities)
+x.rp.prob <- predict(x.rp, type="prob", newdata=testing)
+
+#confusion matrix
+confusionMatrix(x.rp.pred,testing$Class)
+
+# decision tree
+rpart.plot(x.rp, main="Decision tree created using rpart")
+```
+Conditional Inference Tree
+```{r}
+# create model using conditional inference trees
+x.ct <- ctree(Class ~ ., data=training)
+# predict classes for the evaluation data set
+x.ct.pred <- predict(x.ct, newdata=testing)
+# score the evaluation data set (extract the probabilities)
+x.ct.prob <-  1- unlist(treeresponse(x.ct, testing), use.names=F)[seq(1,nrow(testing)*2,2)]
+#confusion matrix
+confusionMatrix(x.ct.pred,testing$Class)
+# decision tree
+plot(x.ct, main="Decision tree created using condition inference trees")
+```
+
+Cforest forest 
+```{r}
+# create model using random forest and bagging ensemble using conditional inference trees
+x.cf <- cforest(Class ~ ., data=training, control = cforest_unbiased(mtry = ncol(BreastCancer)-2))
+# predict classes for the evaluation data set
+x.cf.pred <- predict(x.cf, newdata=testing)
+# score the evaluation data set (extract the probabilities)
+x.cf.prob <-  1- unlist(treeresponse(x.cf, testing), use.names=F)[seq(1,nrow(testing)*2,2)]
+#confusion matrix
+confusionMatrix(x.cf.pred,testing$Class)
+
+```
+
+Naive Bayes Model
+```{r, warning = FALSE}
+# create model using Naive Bayes 
+x.nb <- NaiveBayes(Class ~ ., data=training)
+
+# predict classes for the evaluation data set
+x.nb.pred <- predict(x.nb, newdata=testing)
+
+#confusion matrix
+confusionMatrix(x.nb.pred$class,testing$Class)
+
+```
+Support Vector Machine Classifier
+```{r}
+# create model using svm
+x.svm <- svm(Class ~ ., data=training)
+
+# predict classes for the evaluation data set
+x.svm.pred <- predict(x.svm, newdata=testing)
+
+#confusion matrix
+confusionMatrix(x.svm.pred,testing$Class)
+
+```
+Neural Net Model
+```{r}
+# create model using neural net
+x.nnet <- nnet(Class ~ ., training, size=1)
+# predict classes for the evaluation data set
+x.nnet.pred <- predict(x.nnet,testing,type="class")
+#confusion matrix
+confusionMatrix(as.factor(x.nnet.pred),testing$Class)
+```
+Cross Validation R tree
+```{r}
+# Leave-1-Out Cross Validation (LOOCV)
+x.cv.pred <- numeric(length(testing[,10]))
+for (i in 1:length(training[,10])) {
+  x1.tree <- rpart(Class ~ ., training[-i,])
+}
+
+for (i in 1:length(testing[,10])) {
+  x1.pred <- predict(x1.tree,testing[i,],type="class")
+  x.cv.pred[i] <- x1.pred
+}
+
+
+x.cv.pred <- factor(x.cv.pred,labels=levels(testing$Class))
+confusionMatrix(x.cv.pred,testing$Class)
+```
+QDA 
+```{r}
+training1<-training
+for (i in 1:ncol(training1)){
+  training1[,i] <- as.integer(training1[,i])
+}
+
+testing1<-testing
+for (i in 1:ncol(testing1)){
+  testing1[,i] <- as.integer(testing1[,i])
+}
+
+#convert class to binary
+training1$Class<-ifelse(as.integer(training1$Class)==2,1,0)
+testing1$Class<-ifelse(as.integer(testing1$Class)==2,1,0)
+#Run QDA model
+x.qda <- qda(Class ~ ., data=training1)
+#predict using training dataset 
+x.qda.pred <- predict(x.qda, testing1)
+#confusion matrix
+confusionMatrix(x.qda.pred$class,as.factor(testing1$Class))
+
+```
+
+Regularised Discriminant Analysis
+```{r}
+#Build model
+x.rda <- rda(Class ~ ., training)
+#Predict using validation data
+x.rda.pred <- predict(x.rda, testing)
+#Confusion matrix
+confusionMatrix(x.rda.pred$class,testing$Class)
+```
+Random Forests
+```{r}
+#Build model
+x.rf <- randomForest(Class ~ ., training)
+#Predict using validation data
+x.rf.pred <- predict(x.rf, testing)
+#confusion matrix
+confusionMatrix(x.rf.pred, testing$Class)
+```
+
+Ensemble output using models
+```{r}
+#Add all prediction in a table
+predall<-data.frame(x.rp.pred,x.ct.pred,x.cf.pred,x.nb.pred$class,x.svm.pred,x.nnet.pred,x.cv.pred,x.rda.pred$class,x.rf.pred)
+#convert to binary
+for (i in 1:ncol(predall)){
+  predall[,i] <- ifelse(predall[,i]=="benign",0,1)
+}
+#unfactor to calcuate rowsums
+predall$x.qda.pred<-unfactor(x.qda.pred$class)
+#calculate rowsums
+predall$sum<-rowSums(predall)
+#Majority Rule 
+predall$majority<-ifelse(predall$sum>=6, "malignant", "benign")
+#Confusion matrix 
+confusionMatrix(as.factor(predall$majority), testing$Class)
+```
+
+
